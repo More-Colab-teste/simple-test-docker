@@ -1,45 +1,36 @@
-name: CI/CD Pipeline
+name: Docker Deploy
 
 on:
   push:
     branches:
-      - production
+      - production  # This triggers the workflow only on 'production' branch pushes
 
 jobs:
   deploy:
-    name: Deploy to self-hosted runner
-    runs-on: self-hosted
+    runs-on: self-hosted  # Runs on your self-hosted runner
 
     steps:
+      # Checkout the code from the repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Start/restart app with PM2
+      # Build the Docker image
+      - name: Build Docker image
         run: |
-          APP_DIR=/home/ubuntu/BIOma/simple-test
+          docker build -t simple-test-docker:latest .
 
-          # If folder doesn't exist, clone repo
-          if [ ! -d "$APP_DIR" ]; then
-            mkdir -p $APP_DIR
-            git clone https://github.com/${{ github.repository }} $APP_DIR
-          fi
+      # Stop any existing containers running on the same name
+      - name: Stop old container (if exists)
+        run: |
+          docker stop simple-test-docker || true
+          docker rm simple-test-docker || true
 
-          cd $APP_DIR
-          git fetch origin
-          git checkout production
-          git reset --hard origin/production
-
-          # Install dependencies
-          npm ci
-
-          # Start/restart app using PM2
-          pm2 start app.js --name simple-test || pm2 restart simple-test
-          pm2 save
+      # Run the new container, dynamically set port using GitHub Secret
+      - name: Run new container
+        run: |
+          docker run -d \
+            --name simple-test-docker \
+            -p ${{ secrets.PORT }}:${{ secrets.PORT }} \
+            --restart unless-stopped \
+            -e PORT=${{ secrets.PORT }} \
+            simple-test-docker:latest
